@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CryptoSignal v3 — 10-Indicator AI Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<link rel="stylesheet" href="/static/css/style.css">
+<style>
+/* ── User counter badge ── */
+.user-count-badge {
+  display: flex; align-items: center; gap: 5px;
+  background: rgba(56,189,248,0.10);
+  border: 1px solid rgba(56,189,248,0.22);
+  border-radius: 20px;
+  padding: 3px 10px;
+  font-size: 11px;
+  color: #38bdf8;
+  font-family: 'Space Mono', monospace;
+  white-space: nowrap;
+}
+.user-count-badge .uc-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #38bdf8;
+  animation: ucpulse 2s ease-in-out infinite;
+}
+@keyframes ucpulse {
+  0%,100% { opacity:1; transform:scale(1); }
+  50%      { opacity:.4; transform:scale(0.8); }
+}
+
+/* ── AI learn log ── */
+.ai-learn-log-wrap {
+  max-height: 160px;
+  overflow-y: auto;
+  margin-top: 8px;
+  border-top: 1px solid var(--border);
+  padding-top: 6px;
+}
+.al-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 3px 4px; border-radius: 4px; font-size: 11px;
+  font-family: 'Space Mono', monospace;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  animation: alSlide .35s ease;
+}
+@keyframes alSlide {
+  from { opacity:0; transform:translateX(-8px); }
+  to   { opacity:1; transform:translateX(0); }
+}
+.al-row.al-win  { background: rgba(63,185,80,0.06); }
+.al-row.al-loss { background: rgba(248,81,73,0.06); }
+.al-time  { color: var(--text-3); min-width:50px; }
+.al-badge { background: rgba(255,255,255,0.08); border-radius:3px; padding:1px 5px; color:#aaa; }
+.al-pair  { flex:1; color: var(--text-2); }
+.al-outcome.al-win  { color: #3fb950; font-weight:700; }
+.al-outcome.al-loss { color: #f85149; font-weight:700; }
+.al-acc   { color: var(--text-3); font-size:10px; }
+
+/* ── AI panel flash animation ── */
+@keyframes aiFlash {
+  0%   { box-shadow: 0 0 0 0 rgba(63,185,80,0); }
+  40%  { box-shadow: 0 0 0 6px rgba(63,185,80,0.25); }
+  100% { box-shadow: 0 0 0 0 rgba(63,185,80,0); }
+}
+.ai-panel.ai-flash { animation: aiFlash 0.7s ease-out; }
+
+/* ── AI learn log empty state ── */
+.al-empty { color: var(--text-3); font-size: 11px; padding: 6px 4px; font-style: italic; }
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════ HEADER ══════════════════════════════ -->
+<header class="header">
+  <div class="header-left">
+    <div class="logo">
+      <span class="logo-dot"></span>
+      <span class="logo-text">CryptoSignal</span>
+      <span class="logo-version">v3</span>
+    </div>
+    <div class="live-badge">
+      <span class="live-dot"></span>
+      LIVE
+    </div>
+  </div>
+
+  <div class="pair-switcher" id="pairSwitcher">
+    <button class="pair-btn active" data-pair="BTC">BTC</button>
+    <button class="pair-btn" data-pair="ETH">ETH</button>
+    <button class="pair-btn" data-pair="BNB">BNB</button>
+    <button class="pair-btn" data-pair="SOL">SOL</button>
+    <button class="pair-btn" data-pair="PAXG">PAXG</button>
+    <button class="pair-btn" data-pair="DOGE">DOGE</button>
+    <button class="pair-btn" data-pair="ZEC">ZEC</button>
+  </div>
+
+  <div class="header-right">
+    <!-- Active user counter -->
+    <div class="user-count-badge" id="userCountBadge" title="Active users">
+      <span class="uc-dot"></span>
+      <span id="userCountBadge">1</span> online
+    </div>
+    <div class="ai-mini-badge" id="aiMiniBadge" title="AI trained samples">
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>
+      </svg>
+      AI: <span id="aiSamplesBadge">—</span> samples
+    </div>
+    <span class="last-update" id="lastUpdate">—</span>
+    <button class="refresh-btn" id="refreshBtn" onclick="fetchAll()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="23 4 23 10 17 10"></polyline>
+        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+      </svg>
+      Refresh
+    </button>
+  </div>
+</header>
+
+<!-- ══════════════════════════════ TICKER BAR ══════════════════════════════ -->
+<div class="ticker-bar">
+  <div class="ticker-item"><span class="ticker-label">PRICE</span><span class="ticker-val" id="tickerPrice">—</span></div>
+  <div class="ticker-divider"></div>
+  <div class="ticker-item"><span class="ticker-label">24H CHANGE</span><span class="ticker-val" id="tickerChange">—</span></div>
+  <div class="ticker-divider"></div>
+  <div class="ticker-item"><span class="ticker-label">24H HIGH</span><span class="ticker-val" id="tickerHigh">—</span></div>
+  <div class="ticker-divider"></div>
+  <div class="ticker-item"><span class="ticker-label">24H LOW</span><span class="ticker-val" id="tickerLow">—</span></div>
+  <div class="ticker-divider"></div>
+  <div class="ticker-item"><span class="ticker-label">VOLUME</span><span class="ticker-val" id="tickerVol">—</span></div>
+  <div class="ticker-divider"></div>
+  <div class="ticker-item"><span class="ticker-label">ATR</span><span class="ticker-val" id="tickerAtr">—</span></div>
+  <div class="ticker-divider"></div>
+  <div class="ticker-item"><span class="ticker-label">VWAP</span><span class="ticker-val" id="tickerVwap">—</span></div>
+  <div class="ticker-divider"></div>
+  <div class="ticker-item"><span class="ticker-label">WILLIAMS %R</span><span class="ticker-val" id="tickerWillR">—</span></div>
+  <div class="ticker-divider"></div>
+  <div class="ticker-item"><span class="ticker-label">VOLATILITY</span><span class="ticker-val" id="tickerVola">—</span></div>
+</div>
+
+<!-- ══════════════════════════════ MAIN SIGNAL BANNER ══════════════════════════════ -->
+<div class="signal-banner-wrap">
+  <div class="signal-banner neutral" id="signalBanner">
+    <div class="signal-banner-left">
+      <div class="signal-tf-tabs">
+        <button class="tf-tab active" data-tf="15m">15m</button>
+        <button class="tf-tab" data-tf="1h">1h</button>
+        <button class="tf-tab" data-tf="4h">4h</button>
+        <button class="tf-tab" data-tf="1d">1d</button>
+      </div>
+      <div class="signal-main">
+        <div class="signal-type-label" id="signalLabel">Loading…</div>
+        <div class="signal-english" id="signalEnglish">Fetching market data…</div>
+      </div>
+      <div class="score-breakdown">
+        <div class="sbd-item bull-side">
+          <span class="sbd-label">BULL</span>
+          <div class="sbd-bar"><div class="sbd-fill bull" id="sdbBullFill" style="width:0%"></div></div>
+          <span class="sbd-val" id="sdbBullVal">—</span>
+        </div>
+        <div class="sbd-divider"></div>
+        <div class="sbd-item bear-side">
+          <span class="sbd-val" id="sdbBearVal">—</span>
+          <div class="sbd-bar rev"><div class="sbd-fill bear" id="sdbBearFill" style="width:0%"></div></div>
+          <span class="sbd-label">BEAR</span>
+        </div>
+      </div>
+    </div>
+    <div class="signal-banner-right">
+      <div class="dual-score-wrap">
+        <div class="signal-score-wrap">
+          <svg class="score-ring" viewBox="0 0 80 80">
+            <circle cx="40" cy="40" r="34" class="ring-bg"/>
+            <circle cx="40" cy="40" r="34" class="ring-fill" id="scoreRing" stroke-dasharray="213.6" stroke-dashoffset="213.6"/>
+            <text x="40" y="44" class="ring-text" id="scoreText">—</text>
+          </svg>
+          <div class="score-label">RULE SCORE</div>
+        </div>
+        <div class="signal-score-wrap">
+          <svg class="score-ring" viewBox="0 0 80 80">
+            <circle cx="40" cy="40" r="34" class="ring-bg"/>
+            <circle cx="40" cy="40" r="34" class="ring-fill ring-fill-ai" id="blendedRing" stroke-dasharray="213.6" stroke-dashoffset="213.6"/>
+            <text x="40" y="44" class="ring-text" id="blendedText">—</text>
+          </svg>
+          <div class="score-label">AI SCORE</div>
+        </div>
+      </div>
+      <div class="bull-bear-wrap">
+        <div class="bb-item bull"><span class="bb-icon">▲</span><span class="bb-val" id="bullCount">—</span><span class="bb-lab">BULL</span></div>
+        <div class="bb-item bear"><span class="bb-icon">▼</span><span class="bb-val" id="bearCount">—</span><span class="bb-lab">BEAR</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════ MULTI-TF STRIP ══════════════════════════════ -->
+<div class="mt-strip">
+  <div class="mt-card" id="mt-15m"><div class="mt-tf">15m</div><div class="mt-sig">—</div><div class="mt-score">— / 100</div></div>
+  <div class="mt-card" id="mt-1h"><div class="mt-tf">1h</div><div class="mt-sig">—</div><div class="mt-score">— / 100</div></div>
+  <div class="mt-card" id="mt-4h"><div class="mt-tf">4h</div><div class="mt-sig">—</div><div class="mt-score">— / 100</div></div>
+  <div class="mt-card" id="mt-1d"><div class="mt-tf">1d</div><div class="mt-sig">—</div><div class="mt-score">— / 100</div></div>
+  <div class="mt-consensus" id="mtConsensus">
+    <div class="mt-con-label">CONSENSUS</div>
+    <div class="mt-con-val" id="consensusLabel">—</div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════ BODY ══════════════════════════════ -->
+<div class="body-grid">
+
+  <!-- LEFT: Chart -->
+  <div class="chart-col">
+    <div class="chart-toolbar">
+      <div class="chart-tf-tabs">
+        <button class="cht-tf active" data-tf="15m">15m</button>
+        <button class="cht-tf" data-tf="1h">1h</button>
+        <button class="cht-tf" data-tf="4h">4h</button>
+        <button class="cht-tf" data-tf="1d">1d</button>
+      </div>
+      <div class="chart-indicator-toggles">
+        <label><input type="checkbox" id="togEma"  checked> EMA</label>
+        <label><input type="checkbox" id="togBb"   checked> BB</label>
+        <label><input type="checkbox" id="togVwap" checked> VWAP</label>
+        <label><input type="checkbox" id="togIch"  checked> Ichimoku</label>
+        <label><input type="checkbox" id="togVol"  checked> Vol</label>
+      </div>
+    </div>
+    <div id="priceChart" class="price-chart"></div>
+    <div class="sub-charts">
+      <div class="sub-chart-tabs">
+        <button class="sub-tab active" data-chart="rsi">RSI</button>
+        <button class="sub-tab" data-chart="macd">MACD</button>
+        <button class="sub-tab" data-chart="stoch">StochRSI</button>
+        <button class="sub-tab" data-chart="willr">Williams %R</button>
+        <button class="sub-tab" data-chart="volume">Volume</button>
+      </div>
+      <div id="subChart" class="sub-chart-canvas"></div>
+    </div>
+    <div class="ichi-strip" id="ichiStrip">
+      <div class="ichi-item"><span class="ichi-label">Tenkan-sen</span><span class="ichi-val" id="ichiTenkan">—</span></div>
+      <div class="ichi-item"><span class="ichi-label">Kijun-sen</span><span class="ichi-val" id="ichiKijun">—</span></div>
+      <div class="ichi-item"><span class="ichi-label">Senkou A</span><span class="ichi-val up" id="ichiSenkouA">—</span></div>
+      <div class="ichi-item"><span class="ichi-label">Senkou B</span><span class="ichi-val down" id="ichiSenkouB">—</span></div>
+      <div class="ichi-item"><span class="ichi-label">Cloud</span><span class="ichi-val" id="ichiCloudStatus">—</span></div>
+      <div class="ichi-item"><span class="ichi-label">VWAP</span><span class="ichi-val" id="ichiVwap">—</span></div>
+      <div class="ichi-item"><span class="ichi-label">Williams %R</span><span class="ichi-val" id="ichiWillR">—</span></div>
+    </div>
+  </div>
+
+  <!-- RIGHT: Indicators + Panels -->
+  <div class="right-col">
+
+    <!-- Indicator Gauges -->
+    <div class="panel">
+      <div class="panel-title">Indicator States <span class="panel-badge" id="indTf">15m</span></div>
+      <div class="indicator-grid" id="indicatorGrid"></div>
+    </div>
+
+    <!-- Tooltip portal -->
+    <div id="tooltipPortal" class="tt-portal" role="tooltip" aria-hidden="true"></div>
+
+    <!-- Reasons -->
+    <div class="panel">
+      <div class="panel-title">Why This Signal?</div>
+      <div id="reasonsList" class="reasons-list"><div class="reason-item neutral">Loading signals…</div></div>
+      <div id="warningsList" class="warnings-list"></div>
+    </div>
+
+    <!-- Key Levels -->
+    <div class="panel">
+      <div class="panel-title">Key Levels</div>
+      <div class="levels-grid">
+        <div class="level-item"><span class="level-label">Resistance (20-bar high)</span><span class="level-val up" id="lvlHigh">—</span></div>
+        <div class="level-item"><span class="level-label">VWAP</span><span class="level-val" id="lvlVwap">—</span></div>
+        <div class="level-item"><span class="level-label">Ichimoku Cloud Top</span><span class="level-val" id="lvlCloudTop">—</span></div>
+        <div class="level-item"><span class="level-label">EMA50 (Trend)</span><span class="level-val" id="lvlEma50">—</span></div>
+        <div class="level-item"><span class="level-label">Ichimoku Cloud Bot</span><span class="level-val" id="lvlCloudBot">—</span></div>
+        <div class="level-item"><span class="level-label">BB Upper</span><span class="level-val" id="lvlBbUp">—</span></div>
+        <div class="level-item"><span class="level-label">BB Mid</span><span class="level-val neutral" id="lvlBbMid">—</span></div>
+        <div class="level-item"><span class="level-label">BB Lower</span><span class="level-val" id="lvlBbLow">—</span></div>
+        <div class="level-item"><span class="level-label">Support (20-bar low)</span><span class="level-val down" id="lvlLow">—</span></div>
+      </div>
+    </div>
+
+    <!-- Quick Execution Box -->
+    <div class="panel panel-quick-exec">
+      <div class="panel-title">
+        ⚡ QUICK EXECUTION
+        <span class="panel-badge" id="setupTf">15m</span>
+        <span class="qe-dir-badge qe-dir-neutral" id="qeDirectionBadge">— NEUTRAL</span>
+        <span class="signal-age-badge" id="signalAgeBadge">
+          <span class="age-dot"></span>
+          <span id="signalAgeText">just now</span>
+        </span>
+      </div>
+      <div class="qe-grid">
+        <div class="qe-row qe-entry">
+          <span class="qe-label">ENTRY</span>
+          <span class="qe-val" id="setupEntry">—</span>
+          <button class="qe-copy-btn" data-field="entry" title="Copy entry price">⎘</button>
+        </div>
+        <div class="qe-row qe-sl">
+          <span class="qe-label">STOP LOSS</span>
+          <span class="qe-val" id="setupStop">—</span>
+          <button class="qe-copy-btn" data-field="stop" title="Copy stop loss">⎘</button>
+        </div>
+        <div class="qe-row qe-tp">
+          <span class="qe-label">TAKE PROFIT</span>
+          <span class="qe-val" id="setupTarget">—</span>
+          <button class="qe-copy-btn" data-field="target" title="Copy take profit">⎘</button>
+        </div>
+        <div class="qe-rr-row">
+          <span class="qe-rr-label">Risk / Reward</span>
+          <span class="setup-val" id="setupRR">—</span>
+        </div>
+      </div>
+      <button class="qe-copy-all-btn" id="copyAllBtn">Copy All Levels</button>
+    </div>
+
+    <!-- AI Engine Panel (upgraded) -->
+    <div class="panel ai-panel">
+      <div class="panel-title">AI ENGINE <span class="panel-badge" id="aiTf">15m</span></div>
+      <div class="ai-confidence-wrap">
+        <div class="ai-row">
+          <div class="ai-progress"><div class="ai-progress-bar" id="aiProgressBar" style="width:0%"></div></div>
+          <div class="ai-value" id="aiValue">—%</div>
+        </div>
+        <div class="ai-label" id="aiLabel">Insufficient data — model learning…</div>
+        <div class="ai-stats-row">
+          <div class="ai-stat"><div class="ai-stat-val" id="aiStatSamples">0</div><div class="ai-stat-lab">SAMPLES</div></div>
+          <div class="ai-stat"><div class="ai-stat-val" id="aiStatGlobalAcc">—%</div><div class="ai-stat-lab">GLOBAL ACC</div></div>
+          <div class="ai-stat"><div class="ai-stat-val" id="aiStatWeight">0%</div><div class="ai-stat-lab">AI WEIGHT</div></div>
+          <div class="ai-stat"><div class="ai-stat-val" id="aiStatBlended">—</div><div class="ai-stat-lab">BLENDED</div></div>
+        </div>
+        <div class="ai-pair-acc" id="aiPairAcc"></div>
+
+        <!-- NEW: Real-time AI Learning Log -->
+        <div style="margin-top:10px;">
+          <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">
+            ⚡ Real-time Learning Flow
+          </div>
+          <div class="ai-learn-log-wrap">
+            <div id="aiLearnLog">
+              <div class="al-empty">Waiting for resolved signals to train on…</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Signal Success Rate -->
+    <div class="panel">
+      <div class="panel-title">Signal Success Rate <span class="panel-badge" id="srTf">15m</span></div>
+      <div class="success-rate-wrap">
+        <div class="sr-main">
+          <div class="sr-pct" id="srPct">—%</div>
+          <div class="sr-sub" id="srSub">no data yet</div>
+        </div>
+        <div class="sr-bar-wrap">
+          <div class="sr-bar">
+            <div class="sr-fill win"  id="srWinFill"  style="width:0%"></div>
+            <div class="sr-fill loss" id="srLossFill" style="width:0%"></div>
+          </div>
+          <div class="sr-bar-labels">
+            <span class="sr-w" id="srWins">0W</span>
+            <span class="sr-l" id="srLoss">0L</span>
+            <span class="sr-p" id="srPend">0P</span>
+          </div>
+        </div>
+        <div class="sr-by-type" id="srByType"></div>
+      </div>
+    </div>
+
+    <!-- Signal Log -->
+    <div class="panel">
+      <div class="panel-title">Signal Log</div>
+      <div class="log-list" id="logList">
+        <div class="log-empty">Signals will appear here…</div>
+      </div>
+    </div>
+
+  </div><!-- /right-col -->
+</div><!-- /body-grid -->
+
+<script src="/static/js/app.js"></script>
+</body>
+</html>
